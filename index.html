@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TaskFlow</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>TaskFlow</h1>
+            <p>Double click a task to edit. Toggle theme and add priorities!</p>
+            <button id="theme-toggle"><i class="fas fa-adjust"></i> Toggle Theme</button>
+        </header>
+
+        <div class="input-group">
+            <select id="priority-select">
+                <option value="High">High Priority</option>
+                <option value="Medium">Medium Priority</option>
+                <option value="Low" selected>Low Priority</option>
+            </select>
+            <input type="text" id="todo-input" placeholder="Enter a new task">
+            <button id="add-btn"><i class="fas fa-plus"></i> Add</button>
+        </div>
+
+        <ul id="todo-list"></ul>
+
+        <div id="empty-state" class="empty-state">
+            <i class="fas fa-clipboard-check"></i>
+            <p>All caught up! Time to relax or add a new task.</p>
+        </div>
+
+        <div class="controls">
+            <button id="clear-completed"><i class="fas fa-trash"></i> Clear Completed</button>
+        </div>
+    </div>
+
+    <div id="toast-container"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
