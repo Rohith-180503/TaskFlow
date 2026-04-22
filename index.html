@@ -15,32 +15,58 @@
         <header>
             <h1>TaskFlow</h1>
             <p>Double click a task to edit. Toggle theme and add priorities!</p>
-            <button id="theme-toggle"><i class="fas fa-adjust"></i> Toggle Theme</button>
+            <button id="theme-toggle" aria-label="Toggle dark theme" aria-pressed="false">
+                <i class="fas fa-adjust"></i> Toggle Theme
+            </button>
         </header>
 
         <div class="input-group">
-            <select id="priority-select">
+            <label for="priority-select" class="sr-only">Select task priority</label>
+            <select id="priority-select" aria-label="Task priority">
                 <option value="High">High Priority</option>
                 <option value="Medium">Medium Priority</option>
                 <option value="Low" selected>Low Priority</option>
             </select>
-            <input type="text" id="todo-input" placeholder="Enter a new task">
-            <button id="add-btn"><i class="fas fa-plus"></i> Add</button>
+            <label for="todo-input" class="sr-only">Enter a new task</label>
+            <input type="text" id="todo-input" placeholder="Enter a new task" maxlength="200" aria-label="Task text">
+            <button id="add-btn" aria-label="Add task"><i class="fas fa-plus"></i> Add</button>
         </div>
+
+        <div class="toolbar">
+            <div class="filters" role="group" aria-label="Filter tasks">
+                <button class="filter-btn active" data-filter="all" aria-label="Show all tasks">All</button>
+                <button class="filter-btn" data-filter="active" aria-label="Show active tasks">Active</button>
+                <button class="filter-btn" data-filter="completed" aria-label="Show completed tasks">Completed</button>
+            </div>
+
+            <div class="sort-group">
+                <label for="sort-select" class="sr-only">Sort tasks</label>
+                <select id="sort-select" aria-label="Sort tasks">
+                    <option value="newest" selected>Newest</option>
+                    <option value="oldest">Oldest</option>
+                    <option value="priority-high">Priority: High → Low</option>
+                    <option value="priority-low">Priority: Low → High</option>
+                </select>
+            </div>
+        </div>
+
+        <p id="task-counter" aria-live="polite">0 tasks</p>
 
         <ul id="todo-list"></ul>
 
-        <div id="empty-state" class="empty-state">
+        <div id="empty-state" class="empty-state" aria-live="polite">
             <i class="fas fa-clipboard-check"></i>
             <p>All caught up! Time to relax or add a new task.</p>
         </div>
 
         <div class="controls">
-            <button id="clear-completed"><i class="fas fa-trash"></i> Clear Completed</button>
+            <button id="clear-completed" aria-label="Clear completed tasks">
+                <i class="fas fa-trash"></i> Clear Completed
+            </button>
         </div>
     </div>
 
-    <div id="toast-container"></div>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
 
     <script src="script.js"></script>
 </body>

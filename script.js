@@ -1,3 +1,17 @@
+// Constants
+const STORAGE_KEYS = {
+    TODOS: 'todos',
+    THEME: 'theme'
+};
+
+const PRIORITY_ORDER = {
+    High: 3,
+    Medium: 2,
+    Low: 1
+};
+
+const MAX_TODO_LENGTH = 200;
+
 // DOM Elements
 const input = document.getElementById('todo-input');
 const addBtn = document.getElementById('add-btn');
@@ -6,20 +20,160 @@ const themeToggle = document.getElementById('theme-toggle');
 const clearCompleted = document.getElementById('clear-completed');
 const prioritySelect = document.getElementById('priority-select');
 const emptyState = document.getElementById('empty-state');
+const emptyStateText = emptyState.querySelector('p');
 const toastContainer = document.getElementById('toast-container');
+const filterButtons = document.querySelectorAll('.filter-btn');
+const sortSelect = document.getElementById('sort-select');
+const taskCounter = document.getElementById('task-counter');
 
-let todos = JSON.parse(localStorage.getItem('todos')) || [];
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// Load saved theme
-if(localStorage.getItem('theme') === 'dark') document.body.classList.add('dark-theme');
+let todos = loadTodos();
+let currentFilter = 'all';
+let currentSort = 'newest';
 
-function saveTodos() {
-    localStorage.setItem('todos', JSON.stringify(todos));
+function generateId() {
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-// Create a task item
-function createTodoNode(todo, index) {
+function normalizeTodo(todo) {
+    const text = String(todo?.text || '').trim().slice(0, MAX_TODO_LENGTH);
+    if (!text) return null;
+
+    return {
+        id: todo?.id || generateId(),
+        text,
+        completed: Boolean(todo?.completed),
+        priority: PRIORITY_ORDER[todo?.priority] ? todo.priority : 'Low',
+        createdAt: Number.isFinite(todo?.createdAt) ? todo.createdAt : Date.now()
+    };
+}
+
+function loadTodos() {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEYS.TODOS);
+        if (!raw) return [];
+
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+
+        return parsed.map(normalizeTodo).filter(Boolean);
+    } catch {
+        return [];
+    }
+}
+
+function saveTodos() {
+    localStorage.setItem(STORAGE_KEYS.TODOS, JSON.stringify(todos));
+}
+
+function setTheme(isDark) {
+    document.body.classList.toggle('dark-theme', isDark);
+    themeToggle.setAttribute('aria-pressed', String(isDark));
+    localStorage.setItem(STORAGE_KEYS.THEME, isDark ? 'dark' : 'light');
+}
+
+function initializeTheme() {
+    const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
+    setTheme(savedTheme === 'dark');
+}
+
+function isDuplicateText(text, excludeId = null) {
+    const normalized = text.toLowerCase();
+    return todos.some(todo => todo.id !== excludeId && todo.text.toLowerCase() === normalized);
+}
+
+function getTodoIndexById(id) {
+    return todos.findIndex(todo => todo.id === id);
+}
+
+function parseMarkdown(text) {
+    if (window.marked && window.DOMPurify) {
+        return DOMPurify.sanitize(marked.parseInline(text));
+    }
+
+    const span = document.createElement('span');
+    span.textContent = text;
+    return span.innerHTML;
+}
+
+function triggerConfetti() {
+    if (!window.confetti || prefersReducedMotion) return;
+
+    confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 }
+    });
+}
+
+function showToast(message, options = {}) {
+    const { actionLabel = '', onAction = null, duration = 5000 } = options;
+
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+
+    const text = document.createElement('span');
+    text.textContent = message;
+    toast.appendChild(text);
+
+    function dismissToast() {
+        toast.classList.add('hide');
+        setTimeout(() => toast.remove(), 300);
+    }
+
+    const timeoutId = setTimeout(dismissToast, duration);
+
+    if (actionLabel && typeof onAction === 'function') {
+        const actionBtn = document.createElement('button');
+        actionBtn.className = 'toast-undo-btn';
+        actionBtn.textContent = actionLabel;
+
+        actionBtn.addEventListener('click', () => {
+            clearTimeout(timeoutId);
+            onAction();
+            dismissToast();
+        });
+
+        toast.appendChild(actionBtn);
+    }
+
+    toastContainer.appendChild(toast);
+}
+
+function getVisibleTodos() {
+    const filtered = todos.filter(todo => {
+        if (currentFilter === 'active') return !todo.completed;
+        if (currentFilter === 'completed') return todo.completed;
+        return true;
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+        switch (currentSort) {
+            case 'oldest':
+                return a.createdAt - b.createdAt;
+            case 'priority-high':
+                return PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority];
+            case 'priority-low':
+                return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+            case 'newest':
+            default:
+                return b.createdAt - a.createdAt;
+        }
+    });
+
+    return sorted;
+}
+
+function updateCounter() {
+    const total = todos.length;
+    const active = todos.filter(todo => !todo.completed).length;
+    taskCounter.textContent = `${active} active • ${total} total`;
+}
+
+function createTodoNode(todo) {
     const li = document.createElement('li');
+    li.dataset.id = todo.id;
     li.classList.add(todo.priority.toLowerCase());
 
     const left = document.createElement('div');
@@ -28,38 +182,18 @@ function createTodoNode(todo, index) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.checked = todo.completed;
-    checkbox.addEventListener('change', () => {
-        todo.completed = checkbox.checked;
-        textSpan.classList.toggle('completed', todo.completed);
-        saveTodos();
-        if (todo.completed && window.confetti) {
-            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-        }
-    });
+    checkbox.className = 'todo-checkbox';
+    checkbox.setAttribute('aria-label', `Mark task as completed: ${todo.text}`);
 
     const textSpan = document.createElement('span');
-    if (window.marked && window.DOMPurify) {
-        textSpan.innerHTML = DOMPurify.sanitize(marked.parseInline(todo.text));
-    } else {
-        textSpan.textContent = todo.text;
-    }
-    if(todo.completed) textSpan.classList.add('completed');
+    textSpan.className = 'todo-text';
+    textSpan.tabIndex = 0;
+    textSpan.setAttribute('title', 'Double click to edit');
+    textSpan.innerHTML = parseMarkdown(todo.text);
 
-    // Inline editing
-    textSpan.addEventListener('dblclick', () => {
-        const inputEdit = document.createElement('input');
-        inputEdit.type = 'text';
-        inputEdit.value = todo.text;
-        li.replaceChild(inputEdit, textSpan);
-        inputEdit.focus();
-        inputEdit.addEventListener('keydown', e => {
-            if(e.key === 'Enter') {
-                todo.text = inputEdit.value.trim();
-                render();
-                saveTodos();
-            }
-        });
-    });
+    if (todo.completed) {
+        textSpan.classList.add('completed');
+    }
 
     left.appendChild(checkbox);
     left.appendChild(textSpan);
@@ -68,97 +202,251 @@ function createTodoNode(todo, index) {
     actions.className = 'todo-actions';
 
     const delBtn = document.createElement('button');
-    delBtn.innerHTML = '<i class="fas fa-trash"></i>';
+    delBtn.type = 'button';
     delBtn.className = 'delete';
-    delBtn.addEventListener('click', () => {
-        const deletedTodo = todos[index];
-        todos.splice(index, 1);
-        render();
-        saveTodos();
-        showUndoToast(deletedTodo, index);
-    });
+    delBtn.dataset.action = 'delete';
+    delBtn.setAttribute('aria-label', `Delete task: ${todo.text}`);
+    delBtn.innerHTML = '<i class="fas fa-trash"></i>';
 
     actions.appendChild(delBtn);
 
     li.appendChild(left);
     li.appendChild(actions);
+
     return li;
 }
 
-// Render tasks
 function render() {
+    const visibleTodos = getVisibleTodos();
     list.innerHTML = '';
-    todos.forEach((todo, i) => list.appendChild(createTodoNode(todo, i)));
-    
-    if (todos.length === 0) {
+
+    const fragment = document.createDocumentFragment();
+    visibleTodos.forEach(todo => fragment.appendChild(createTodoNode(todo)));
+    list.appendChild(fragment);
+
+    if (visibleTodos.length === 0) {
         emptyState.style.display = 'flex';
+        emptyStateText.textContent = todos.length
+            ? 'No tasks match this filter.'
+            : 'All caught up! Time to relax or add a new task.';
     } else {
         emptyState.style.display = 'none';
     }
+
+    updateCounter();
 }
 
-// Toast Undo Logic
-function showUndoToast(deletedTodo, originalIndex) {
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    
-    const text = document.createElement('span');
-    text.textContent = 'Task deleted';
-    
-    const undoBtn = document.createElement('button');
-    undoBtn.className = 'toast-undo-btn';
-    undoBtn.textContent = 'Undo';
-    
-    toast.appendChild(text);
-    toast.appendChild(undoBtn);
-    toastContainer.appendChild(toast);
-    
-    let isUndone = false;
-    
-    const timeoutId = setTimeout(() => {
-        if (!isUndone) {
-            toast.classList.add('hide');
-            setTimeout(() => toast.remove(), 300);
-        }
-    }, 5000);
-    
-    undoBtn.addEventListener('click', () => {
-        isUndone = true;
-        clearTimeout(timeoutId);
-        
-        // Restore task safely by adding at the end if originalIndex is out of bounds
-        const indexToInsert = Math.min(originalIndex, todos.length);
-        todos.splice(indexToInsert, 0, deletedTodo);
+function addTodo() {
+    const text = input.value.trim();
+
+    if (!text) {
+        showToast('Task cannot be empty.');
+        return;
+    }
+
+    if (text.length > MAX_TODO_LENGTH) {
+        showToast(`Task must be ${MAX_TODO_LENGTH} characters or less.`);
+        return;
+    }
+
+    if (isDuplicateText(text)) {
+        showToast('Task already exists.');
+        return;
+    }
+
+    todos.push({
+        id: generateId(),
+        text,
+        completed: false,
+        priority: prioritySelect.value,
+        createdAt: Date.now()
+    });
+
+    input.value = '';
+    input.focus();
+    saveTodos();
+    render();
+}
+
+function startInlineEdit(todoId, textElement) {
+    const todoIndex = getTodoIndexById(todoId);
+    if (todoIndex === -1) return;
+
+    const todo = todos[todoIndex];
+    const editInput = document.createElement('input');
+    editInput.type = 'text';
+    editInput.value = todo.text;
+    editInput.maxLength = MAX_TODO_LENGTH;
+    editInput.className = 'inline-edit-input';
+    editInput.setAttribute('aria-label', 'Edit task text');
+
+    const parent = textElement.parentElement;
+    parent.replaceChild(editInput, textElement);
+    editInput.focus();
+    editInput.select();
+
+    let finished = false;
+
+    const cancelEdit = () => {
+        if (finished) return;
+        finished = true;
         render();
+    };
+
+    const saveEdit = () => {
+        if (finished) return;
+
+        const nextText = editInput.value.trim();
+        if (!nextText) {
+            showToast('Task text cannot be empty.');
+            return cancelEdit();
+        }
+
+        if (isDuplicateText(nextText, todo.id)) {
+            showToast('Another task with the same text already exists.');
+            return cancelEdit();
+        }
+
+        finished = true;
+        todos[todoIndex].text = nextText;
         saveTodos();
-        
-        toast.classList.add('hide');
-        setTimeout(() => toast.remove(), 300);
+        render();
+    };
+
+    editInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter') saveEdit();
+        if (event.key === 'Escape') cancelEdit();
+    });
+
+    editInput.addEventListener('blur', saveEdit);
+}
+
+function removeTodo(todoId) {
+    const index = getTodoIndexById(todoId);
+    if (index === -1) return;
+
+    const [deletedTodo] = todos.splice(index, 1);
+    saveTodos();
+    render();
+
+    showToast('Task deleted', {
+        actionLabel: 'Undo',
+        onAction: () => {
+            const indexToInsert = Math.min(index, todos.length);
+            todos.splice(indexToInsert, 0, deletedTodo);
+            saveTodos();
+            render();
+        }
     });
 }
 
-// Add task
-function addTodo() {
-    const text = input.value.trim();
-    if(!text) return;
-    todos.push({ text, completed: false, priority: prioritySelect.value });
-    input.value = '';
-    render();
+function clearCompletedTodos() {
+    const removed = [];
+
+    todos.forEach((todo, index) => {
+        if (todo.completed) {
+            removed.push({ todo, index });
+        }
+    });
+
+    if (removed.length === 0) {
+        showToast('No completed tasks to clear.');
+        return;
+    }
+
+    todos = todos.filter(todo => !todo.completed);
     saveTodos();
+    render();
+
+    showToast(`Cleared ${removed.length} completed task${removed.length > 1 ? 's' : ''}.`, {
+        actionLabel: 'Undo',
+        onAction: () => {
+            removed
+                .sort((a, b) => a.index - b.index)
+                .forEach(({ todo, index }) => {
+                    const insertIndex = Math.min(index, todos.length);
+                    todos.splice(insertIndex, 0, todo);
+                });
+
+            saveTodos();
+            render();
+        }
+    });
 }
 
 // Event Listeners
 addBtn.addEventListener('click', addTodo);
-input.addEventListener('keydown', e => { if(e.key === 'Enter') addTodo(); });
-themeToggle.addEventListener('click', () => {
-    document.body.classList.toggle('dark-theme');
-    localStorage.setItem('theme', document.body.classList.contains('dark-theme') ? 'dark' : 'light');
-});
-clearCompleted.addEventListener('click', () => {
-    todos = todos.filter(t => !t.completed);
-    render();
-    saveTodos();
+
+input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') addTodo();
 });
 
-// Initial render
+themeToggle.addEventListener('click', () => {
+    const isDark = !document.body.classList.contains('dark-theme');
+    setTheme(isDark);
+});
+
+clearCompleted.addEventListener('click', clearCompletedTodos);
+
+filterButtons.forEach(button => {
+    button.addEventListener('click', () => {
+        currentFilter = button.dataset.filter;
+
+        filterButtons.forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+
+        render();
+    });
+});
+
+sortSelect.addEventListener('change', () => {
+    currentSort = sortSelect.value;
+    render();
+});
+
+list.addEventListener('change', event => {
+    const checkbox = event.target.closest('.todo-checkbox');
+    if (!checkbox) return;
+
+    const todoId = checkbox.closest('li')?.dataset.id;
+    const todoIndex = getTodoIndexById(todoId);
+    if (todoIndex === -1) return;
+
+    todos[todoIndex].completed = checkbox.checked;
+    saveTodos();
+    render();
+
+    if (checkbox.checked) {
+        triggerConfetti();
+    }
+});
+
+list.addEventListener('click', event => {
+    const deleteButton = event.target.closest('button[data-action="delete"]');
+    if (!deleteButton) return;
+
+    const todoId = deleteButton.closest('li')?.dataset.id;
+    removeTodo(todoId);
+});
+
+list.addEventListener('dblclick', event => {
+    const textElement = event.target.closest('.todo-text');
+    if (!textElement) return;
+
+    const todoId = textElement.closest('li')?.dataset.id;
+    startInlineEdit(todoId, textElement);
+});
+
+list.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+
+    const textElement = event.target.closest('.todo-text');
+    if (!textElement) return;
+
+    const todoId = textElement.closest('li')?.dataset.id;
+    startInlineEdit(todoId, textElement);
+});
+
+// Initial setup
+initializeTheme();
 render();
